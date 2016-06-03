@@ -1,6 +1,6 @@
 # Azure
 ## Send data to Event Hub
-Following information from Azure are needed to make connection:
+Create a new policy to the Event Hub and then following information from Azure are needed to make a connection:
 - Event Hub name
 - Namespace name
 - Shared Access Key Name
