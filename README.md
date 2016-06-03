@@ -1,5 +1,9 @@
 # Azure
 ## Send data to Event Hub
+Install Azure SDK
+- Raspian: sudo pip install azure-servicebus
+- Windows: python -m pip install azure-servicebus
+
 Create a new policy to the Event Hub and then following information from Azure are needed to make a connection:
 - Event Hub name
 - Namespace name
