@@ -1,4 +1,7 @@
 # Azure
+## Send data to IoT Hub
+With Python's [Requests](http://docs.python-requests.org/en/master/)
+
 ## Send data to Event Hub
 Install Azure SDK
 - Raspian: sudo pip install azure-servicebus
