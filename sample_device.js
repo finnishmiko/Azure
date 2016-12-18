@@ -24,12 +24,57 @@ var Protocol = require('azure-iot-device-mqtt').Mqtt;
 var Client = require('azure-iot-device').Client;
 var Message = require('azure-iot-device').Message;
 
+var ConnectionString = require('azure-iot-device').ConnectionString;
+
 // String containing Hostname, Device Id & Device Key in the following formats:
 //  "HostName=<iothub_host_name>;DeviceId=<device_id>;SharedAccessKey=<device_key>"
-var connectionString = 'HostName=<>;DeviceId=<>;SharedAccessKey=<>';
+var connectionString = '';
 
 // fromConnectionString must specify a transport constructor, coming from any transport package.
 var client = Client.fromConnectionString(connectionString, Protocol);
+
+// Device meta data
+var deviceId = ConnectionString.parse(connectionString).DeviceId;
+
+var sendDelay = 60;
+var humidity = 50;
+var externalTemperature = 55;
+
+var deviceMetaData = {
+  'ObjectType': 'DeviceInfo',
+  'IsSimulatedDevice': 0,
+  'Version': '1.0',
+  'DeviceProperties': {
+    'DeviceID': deviceId,
+    'DeviceState': 'normal',
+    'UpdatedTime': null,
+    'Manufacturer': 'Oy',
+    'ModelNumber': 'Raspberry Pi 3',
+    'SerialNumber': 'SER9090',
+    'FirmwareVersion': '1.10',
+    'Platform': 'node.js',
+    'Processor': 'ARM',
+    'InstalledRAM': '64 MB',
+    'Latitude': 62.617025,
+    'Longitude': 22.191285
+  },
+  'Commands': [{
+    'Name': 'SetDelay',
+    'Parameters': [{
+      'Name': 'SendDelay',
+      'Type': 'int minutes'
+    }]
+  },
+    {
+      'Name': 'SetHumidity',
+      'Parameters': [{
+        'Name': 'Humidity',
+        'Type': 'double'
+      }]
+    }]
+};
+
+//console.log('Device metadata:\n' + JSON.stringify(deviceMetaData.Commands[0].Parameters[0].Type));
 
 var connectCallback = function (err) {
   if (err) {
@@ -42,17 +87,18 @@ var connectCallback = function (err) {
   } else {
     console.log('Client connected');
     startupTwinOperations();
+    onGetMeasurement();
     client.on('message', function (msg) {
 		console.log(msg.data.toString());
 		client.complete(msg, printResultFor('completed'));
-    // reject and abandon follow the same pattern.
-    // /!\ reject and abandon are not available with MQTT
+		// reject and abandon follow the same pattern.
+		// /!\ reject and abandon are not available with MQTT
 
-	var v = msg.data.toString();
-	var v = JSON.parse(v);
-	var v = v['text'];
+		var v = msg.data.toString();
+		var v = JSON.parse(v);
+		//var v = v['text'];
 	if(v == "foo" ) {
-		console.log("if", v);
+		console.log("Received message to turn LED on. ", v);
 		var spawn1 = require('child_process').spawn,
 			py1 = spawn1('python', ['05_laser.py']);
 		py1.stdout.on('data',(data) =>{});// console.log("test",data.toString() );});
@@ -60,10 +106,14 @@ var connectCallback = function (err) {
 	else if (v == "bar") {
 		var spawn2 = require('child_process').spawn,
 			py1 = spawn2('python', ['05_laser-off.py']);
-		console.log("else if", v);
+		console.log("Reveiced message to turn off LED. ", v);
 		py1.stdout.on('data',(data) =>{});// console.log("test",data.toString() );});
 	}
-	else {console.log("else", v);}
+	else if (v == "getMeasurement") {
+		console.log("Executing: ", v);
+		onGetMeasurement();
+	}
+	else {console.log("Rxd unrecognized msg. ", v);}
     }); //end of client.on
 
 
@@ -72,19 +122,22 @@ var connectCallback = function (err) {
     var sendInterval = setInterval(function () {
       var spawn = require('child_process').spawn,
 		py = spawn('python', ['28_humiture.py']);
-	py.stdout.on('data',(data) =>{console.log(data.toString());
-	var sensorDataArray = data.toString();
-	sensorDataArray = sensorDataArray.split(" ");
-	var sensorData1 = Number(sensorDataArray[0]);
-	var sensorData2 = Number(sensorDataArray[1]);
-	var dataToCloud = JSON.stringify({ temp: sensorData1, hum: sensorData2 });
+		
+		py.stdout.on('data',(data) =>{console.log(data.toString());
+		var sensorDataArray = data.toString();
+		sensorDataArray = sensorDataArray.split(" ");
+		var sensorData1 = Number(sensorDataArray[0]);
+		var sensorData2 = Number(sensorDataArray[1]);
+		var sensorData3 = Number(sensorDataArray[2]);
+		var dataToCloud = JSON.stringify({ temp: sensorData1, hum: sensorData2, VOC: sensorData3 });
 
       var message = new Message(dataToCloud);
       //message.properties.add('myproperty', 'myvalue');
       console.log('Sending message: ' + message.getData());
       client.sendEvent(message, printResultFor('send'));
+      console.log('Send delay: ' + sendDelay);
 })
-    }, 60*10*1000);
+    }, sendDelay*60*1000);
 
     client.on('error', function (err) {
       console.error('Errol ' + err.message);
@@ -106,6 +159,28 @@ var connectCallback = function (err) {
   }
 };
 
+
+function onGetMeasurement() {
+    // print method name
+    console.log('Received message to get measurement.');
+	var spawn = require('child_process').spawn,
+		py = spawn('python', ['28_humiture.py']);
+		
+		py.stdout.on('data',(data) =>{console.log(data.toString());
+		var sensorDataArray = data.toString();
+		sensorDataArray = sensorDataArray.split(" ");
+		var sensorData1 = Number(sensorDataArray[0]);
+		var sensorData2 = Number(sensorDataArray[1]);
+		var sensorData3 = Number(sensorDataArray[2]);
+		var dataToCloud = JSON.stringify({ temp: sensorData1, hum: sensorData2, VOC: sensorData3 });
+
+    var message = new Message(dataToCloud);
+    console.log('Sending requested message: ' + message.getData());
+    client.sendEvent(message, printResultFor('send'));
+	})
+}
+
+
 function onGetDeviceLog(request, response) {
     // print method name
     console.log('Received method call for method \'' + request.methodName + '\'');
@@ -116,8 +191,9 @@ function onGetDeviceLog(request, response) {
     }
 
     // Implement actual logic here.
+    var devMeta = JSON.stringify(deviceMetaData)
     // complete the response
-    response.send(200, 'example payload', function(err) {
+    response.send(200, devMeta, function(err) {
         if(!!err) {
             console.error('An error ocurred when sending a method response:\n' +
                 err.toString());
@@ -162,7 +238,9 @@ function onReboot(request, response) {
       });
       
       // Add your device's reboot API for physical restart.
-      console.log('Rebooting!');      
+      console.log('Rebooting!');
+      var spawn1 = require('child_process').spawn,
+			py1 = spawn1('sudo', ['reboot']);      
 }
 
 
@@ -174,7 +252,7 @@ function startupTwinOperations(){
                  console.log('retrieved device twin');
                  twin.properties.reported.telemetryConfig = {
                      configId: "0",
-                     sendFrequency: "24h"
+                     sendFrequency: sendDelay
                  }
                  twin.on('properties.desired', function(desiredChange) {
                      console.log("received change: "+JSON.stringify(desiredChange));
@@ -201,7 +279,7 @@ function startupTwinOperations(){
              console.log('Could not report properties');
          } else {
              console.log('Reported pending config change: ' + JSON.stringify(patch));
-             setTimeout(function() {completeConfigChange(twin);}, 60000);
+             setTimeout(function() {completeConfigChange(twin);}, 20000);
          }
      });
  }
@@ -217,7 +295,10 @@ function startupTwinOperations(){
          telemetryConfig: currentTelemetryConfig
      };
      patch.telemetryConfig.pendingConfig = null;
-
+	 
+	 //console.log('Curre: ' + currentTelemetryConfig.sendFrequency);
+	 sendDelay = currentTelemetryConfig.sendFrequency
+     
      twin.properties.reported.update(patch, function(err) {
          if (err) {
              console.error('Error reporting properties: ' + err);
